@@ -1,5 +1,6 @@
 import os
 from asyncio import run
+import random
 
 from ipv8.community import Community, CommunitySettings
 from ipv8.configuration import ConfigBuilder, Strategy, WalkerDefinition, default_bootstrap_defs
@@ -12,7 +13,7 @@ from ipv8_service import IPv8
 
 @dataclass(msg_id=1)  # The value 1 identifies this message and must be unique per community
 class MyMessage:
-    clock: int  # We add an integer (technically a "long long") field "clock" to this message
+    amount: int  # We add an integer (technically a "long long") field "clock" to this message
 
 
 class MyCommunity(Community):
@@ -24,17 +25,16 @@ class MyCommunity(Community):
         self.add_message_handler(MyMessage, self.on_message)
         # The Lamport clock this peer maintains.
         # This is for the example of global clock synchronization.
-        self.lamport_clock = 0
+        self.balance = 100
 
     def started(self) -> None:
         async def start_communication() -> None:
-            if not self.lamport_clock:
-                # If we have not started counting, try boostrapping
-                # communication with our other known peers.
-                for p in self.get_peers():
-                    self.ez_send(p, MyMessage(self.lamport_clock))
-            else:
-                self.cancel_pending_task("start_communication")
+            # If we have not started counting, try boostrapping
+            # communication with our other known peers.
+            for p in self.get_peers():
+                to_send = random.randint(0, self.balance)
+                self.balance -= to_send
+                self.ez_send(p, MyMessage(to_send))
 
         # We register an asyncio task with this overlay.
         # This makes sure that the task ends when this overlay is unloaded.
@@ -44,10 +44,8 @@ class MyCommunity(Community):
     @lazy_wrapper(MyMessage)
     def on_message(self, peer: Peer, payload: MyMessage) -> None:
         # Update our Lamport clock.
-        self.lamport_clock = max(self.lamport_clock, payload.clock) + 1
-        print(self.my_peer, "current clock:", self.lamport_clock)
-        # Then synchronize with the rest of the network again.
-        self.ez_send(peer, MyMessage(self.lamport_clock))
+        self.balance += payload.amount
+        print(self.my_peer, "sent", payload.amount, "to", peer, " - Current balance:", self.balance)
 
 
 async def start_communities() -> None:
